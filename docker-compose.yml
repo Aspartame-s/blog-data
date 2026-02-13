@@ -1,0 +1,36 @@
+# /Users/chengjiahui/blog/blog-data/docker-compose.yml
+
+version: '3.8'
+
+services:
+  app:
+    container_name: blog-app
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/usr/src/app
+      - /usr/src/app/node_modules
+    depends_on:
+      - db
+    environment:
+      # --- 新增的环境变量 ---
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_USER=root
+      - DB_PASSWORD=root
+      - DB_NAME=my_blog
+      - NODE_ENV=production # 在服务器上建议使用 production 模式
+    restart: always
+
+  db:
+    image: mysql:5.7
+    container_name: blog-db
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: my_blog
+    ports:
+      - "3307:3306"
+    volumes:
+      - ./mysql-data:/var/lib/mysql
+    restart: always

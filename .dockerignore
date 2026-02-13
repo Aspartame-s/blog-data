@@ -1,0 +1,5 @@
+# /Users/chengjiahui/blog/blog-data/.dockerignore
+
+node_modules
+npm-debug.log
+.env
