@@ -25,7 +25,7 @@ app.use('/api', uploadRoutes);
 const toolboxRoutes = require('./routes/toolbox');
 app.use('/api', toolboxRoutes);
 
-// 根目录的测试路由
+// 测试路由保持原样...
 app.get('/', async (req, res) => {
     try {
         const [rows] = await db.query('SELECT NOW() as time');
@@ -36,6 +36,31 @@ app.get('/', async (req, res) => {
     }
 });
 
-app.listen(port, '0.0.0.0', () => {
-    console.log(`后端服务已启动，访问地址：http://localhost:${port}`);
+// 在服务启动前，执行一次自举式建表扫描（应对云服务器无此表报错的惨剧）
+const initDatabase = async () => {
+    try {
+        const createTableSql = `
+            CREATE TABLE IF NOT EXISTS toolbox_tasks (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                task_name VARCHAR(255) NOT NULL,
+                task_type VARCHAR(50) NOT NULL,
+                status VARCHAR(20) DEFAULT 'processing',
+                progress INT DEFAULT 0,
+                file_path VARCHAR(255),
+                result_path VARCHAR(255),
+                error_msg TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `;
+        await db.query(createTableSql);
+        console.log('✅ 底层异步工单引擎数据表 (toolbox_tasks) 扫描并重构就绪!');
+    } catch (err) {
+        console.error('❌ 底层异步工单引擎建表崩解:', err);
+    }
+};
+
+initDatabase().then(() => {
+    app.listen(port, '0.0.0.0', () => {
+        console.log(`后端服务已启动，无头架构及全息总线就绪，访问地址：http://localhost:${port}`);
+    });
 });
