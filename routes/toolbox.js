@@ -127,7 +127,72 @@ router.post('/toolbox/pdf-to-word', upload.single('file'), async (req, res) => {
     }
 });
 
-// 3. 获取大盘所有的历史工单数据
+// 3. 全新挂接：纯物理图像提取模式的 PPTX 装配请求（复用旧逻辑 99% 的底层池）
+router.post('/toolbox/pdf-to-ppt', upload.single('file'), async (req, res) => {
+    if (!req.file) return res.status(400).json({ code: 400, message: '系统拒绝处理：您未指定合理的 PDF 数据集' });
+
+    const inputPdf = req.file.path;
+    const originalName = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+    const outputPptName = `slides-${Date.now()}.pptx`;
+    const outputPptPath = path.join(__dirname, '../public/temp', outputPptName);
+
+    try {
+        const [result] = await db.query(
+            `INSERT INTO toolbox_tasks (task_name, task_type, status, progress, file_path, result_path) VALUES (?, ?, ?, ?, ?, ?)`,
+            [originalName, 'pdf2ppt', 'processing', 0, inputPdf, outputPptPath]
+        );
+        const taskId = result.insertId;
+
+        res.json({ code: 200, message: 'PPT 组装流水线已成功为您挂起工单任务调度！', data: { taskId } });
+
+        const scriptPath = path.join(__dirname, '../scripts/pdf2ppt.py');
+        const pythonProcess = spawn('python3', [scriptPath, inputPdf, outputPptPath]);
+
+        let stderrData = '';
+        let currentProgress = 0;
+        
+        const progressTimer = setInterval(() => {
+            if (currentProgress < 95) {
+                currentProgress += Math.floor(Math.random() * 3) + 1;
+                db.query(`UPDATE toolbox_tasks SET progress = ? WHERE id = ?`, [currentProgress, taskId]);
+                broadcastTaskUpdate({ id: taskId, progress: currentProgress, status: 'processing' });
+            }
+        }, 4000);
+
+        pythonProcess.stdout.on('data', (data) => {
+            const outStr = data.toString();
+            const match = outStr.match(/\[(\d+)\/(\d+)\]/);
+            if (match) {
+                const current = parseInt(match[1]);
+                const total = parseInt(match[2]);
+                const percent = Math.floor((current / total) * 100);
+                if (percent > currentProgress && percent <= 99) {
+                    currentProgress = percent;
+                    db.query(`UPDATE toolbox_tasks SET progress = ? WHERE id = ?`, [currentProgress, taskId]);
+                    broadcastTaskUpdate({ id: taskId, progress: currentProgress, status: 'processing' });
+                }
+            }
+        });
+
+        pythonProcess.stderr.on('data', (data) => { stderrData += data.toString(); });
+        pythonProcess.on('close', async (code) => {
+            clearInterval(progressTimer);
+            if (code === 0 && fs.existsSync(outputPptPath)) {
+                await db.query(`UPDATE toolbox_tasks SET status = 'done', progress = 100 WHERE id = ?`, [taskId]);
+                broadcastTaskUpdate({ id: taskId, progress: 100, status: 'done', resultUrl: `/api/toolbox/download/${taskId}` });
+                try { fs.unlinkSync(inputPdf); } catch(e) {}
+            } else {
+                await db.query(`UPDATE toolbox_tasks SET status = 'failed', error_msg = ? WHERE id = ?`, [stderrData, taskId]);
+                broadcastTaskUpdate({ id: taskId, progress: 0, status: 'failed', errorMsg: '底层 Python 拼合图像数据异常断裂' });
+                try { fs.unlinkSync(inputPdf); } catch(e) {}
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ code: 500, message: '中枢排队系统崩溃，该挂载请求被抛出' });
+    }
+});
+
+// 4. 获取大盘所有的历史工单数据
 router.get('/toolbox/tasks', async (req, res) => {
     try {
         // LIMIT 100 以防大盘崩溃
@@ -146,8 +211,12 @@ router.get('/toolbox/download/:id', async (req, res) => {
         
         const task = rows[0];
         if (fs.existsSync(task.result_path)) {
-            // 通过 res.download 自动附加合适头并吐出附件名
-            res.download(task.result_path, task.task_name.replace('.pdf', '.docx'));
+            // 通过后缀分发字典，抹平底层实体与传输协议的异构性
+            let outputName = task.task_name;
+            if (task.task_type === 'pdf2word') outputName = outputName.replace('.pdf', '.docx');
+            if (task.task_type === 'pdf2ppt') outputName = outputName.replace('.pdf', '.pptx');
+            
+            res.download(task.result_path, outputName);
         } else {
             res.status(404).send('非常抱歉，物理存储文件已被系统安全回收池清理。');
         }

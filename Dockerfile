@@ -23,7 +23,7 @@ RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debia
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 RUN pip3 config set global.index-url https://mirrors.aliyun.com/pypi/simple/ && \
-    pip3 install pdf2docx PyMuPDF --no-cache-dir
+    pip3 install pdf2docx PyMuPDF python-pptx --no-cache-dir
 
 # 5. 复制 npm 依赖文件并安装
 # 利用分层缓存机制优化构建速度
