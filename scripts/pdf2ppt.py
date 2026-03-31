@@ -19,28 +19,31 @@ def convert_pdf_to_ppt(pdf_path, ppt_path):
         prs = Presentation()
         # 清理默认留存的第一张母版幻灯片（如果 pptx 自带的话通常无需处理新建即为0）
         
-        # 为了兼容高分屏极客体验，使用高分辨率提取 (DPI=150左右, zoom=2)
-        zoom = 2
+        # 为了避免最终生成的 PPT 体积如同黑洞般膨胀（原版输出往往几十页叠加 1.4G），
+        # 必须大幅降低采样系数，并切换至强有损压缩架构。zoom=1 对应常态化屏幕观感 (72 DPI)。
+        # 若需要更清晰，最高不建议超过 1.5。
+        zoom = 1.25
         mat = fitz.Matrix(zoom, zoom)
         
         for i in range(total_pages):
             page = doc.load_page(i)
-            # 渲染成高精度位图 (PixMap)
+            # 渲染出位图
             pix = page.get_pixmap(matrix=mat, alpha=False)
             
-            # 使用系统内置的沙盒临时文件防止并发交叉污染
-            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as temp_img:
+            # 必须使用 .jpg 来激活 PyMuPDF 藏在暗处的高强度有损剥离算法。绝对杜绝使用带 alpha 无损图层的 .png
+            with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_img:
                 temp_img_name = temp_img.name
             
-            pix.save(temp_img_name)
+            # 使用更极客的底层数据存储钩子并启用 75% 质量的大幅度视觉欺骗压缩
+            img_data = pix.tobytes("jpeg", jpg_quality=75)
+            with open(temp_img_name, "wb") as f:
+                f.write(img_data)
             
             # 以原 PDF 第一页的物理尺寸决定这套 PPTX 的基础画布比例
             if i == 0:
-                # fitz 宽高单位为 point(磅), pptx 默认也使用此类衡量方式（通常用 Inch 处理换算）
                 prs.slide_width = Pt(page.rect.width)
                 prs.slide_height = Pt(page.rect.height)
                 
-            # 我们只需要纯空白模板（序号为 6 通常是彻底的 Blank 布局）
             blank_slide_layout = prs.slide_layouts[6] 
             slide = prs.slides.add_slide(blank_slide_layout)
             
