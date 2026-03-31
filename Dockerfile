@@ -1,29 +1,40 @@
 # /Users/chengjiahui/blog/blog-data/Dockerfile
 
-# 1. 选择一个官方的 Node.js 镜像作为基础
-# 我们选择 18-alpine 版本，它非常小巧
-FROM node:18-alpine
+# 1. 采用 Debian Bookworm 的精简版镜像，为了更好的兼容 C++ 编译库和大型软件
+FROM node:20-bookworm-slim
 
-# 2. 在容器内创建一个工作目录
+# 2. 设置工作目录
 WORKDIR /usr/src/app
 
-# 3. 复制 package.json 和 package-lock.json 到工作目录
-# 这样做可以利用 Docker 的缓存机制，只有在依赖变化时才重新安装
-COPY package*.json ./
+# 3. 安装底层依赖：Python3 和 LibreOffice (这里去掉了不必要的推荐包以减小体积)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    python3-venv \
+    libreoffice \
+    fonts-noto-cjk \
+    && rm -rf /var/lib/apt/lists/*
+# (注：fonts-noto-cjk 用于处理转换 PDF 时的中文字体缺失问题，防止本地中文字符乱码)
 
-# 4. 安装项目依赖
+# 4. 创建 Python 虚拟环境并安装解析库 (彻底避免 Python 包污染全局系统)
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+RUN pip3 install pdf2docx PyMuPDF --no-cache-dir
+
+# 5. 复制 npm 依赖文件并安装
+# 利用分层缓存机制优化构建速度
+COPY package*.json ./
 RUN npm install
 
-# 5. 复制你所有的源代码到工作目录
+# 6. 拷贝全量源代码
 COPY . .
 
-# 确保图片上传目录存在
+# 7. 确保必要的附件存储目录存在
 RUN mkdir -p public/uploads
+RUN mkdir -p public/temp
 
-# 6. 暴露端口
-# 告诉 Docker，我们的应用在容器内部会使用 3000 端口
+# 8. 暴露端口
 EXPOSE 3000
 
-# 7. 定义容器启动时要执行的命令
-# 当容器启动时，它会自动运行 "node app.js"
+# 9. 启动命令
 CMD [ "node", "app.js" ]

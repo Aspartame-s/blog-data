@@ -21,6 +21,10 @@ app.use('/api', userRoutes);
 app.use('/api', postRoutes); // <--- 4. 注册文章路由
 app.use('/api', uploadRoutes);
 
+// 注册全新重构的 PDF 转换工具箱路由
+const toolboxRoutes = require('./routes/toolbox');
+app.use('/api', toolboxRoutes);
+
 // 根目录的测试路由
 app.get('/', async (req, res) => {
     try {
