@@ -37,7 +37,9 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT }}
-          script: bash /root/deploy-backend.sh
+          script: |
+            sed -i '/Riverside/d' /root/deploy-backend.sh
+            bash /root/deploy-backend.sh
 
       # 3. 部署成功通知
       - name: ✅ 部署完成
