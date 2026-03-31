@@ -6,8 +6,11 @@ FROM node:20-bookworm-slim
 # 2. 设置工作目录
 WORKDIR /usr/src/app
 
-# 3. 安装底层依赖：Python3 和 LibreOffice (这里去掉了不必要的推荐包以减小体积)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# 3. 换源并安装底层依赖
+# 为了防止云服务器下载这些巨型依赖时由于网络极慢导致 30 分钟超时，我们强制将系统源切到阿里云
+RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || true && \
+    sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list 2>/dev/null || true && \
+    apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
     python3-venv \
@@ -16,10 +19,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 # (注：fonts-noto-cjk 用于处理转换 PDF 时的中文字体缺失问题，防止本地中文字符乱码)
 
-# 4. 创建 Python 虚拟环境并安装解析库 (彻底避免 Python 包污染全局系统)
+# 4. 创建 Python 虚拟环境并使用国内镜像安装解析库
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
-RUN pip3 install pdf2docx PyMuPDF --no-cache-dir
+RUN pip3 config set global.index-url https://mirrors.aliyun.com/pypi/simple/ && \
+    pip3 install pdf2docx PyMuPDF --no-cache-dir
 
 # 5. 复制 npm 依赖文件并安装
 # 利用分层缓存机制优化构建速度
