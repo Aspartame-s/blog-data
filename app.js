@@ -36,26 +36,32 @@ app.get('/', async (req, res) => {
     }
 });
 
-// 在服务启动前，执行一次自举式建表扫描（应对云服务器无此表报错的惨剧）
+// 在服务启动前，执行一次自举式建表扫描（加入探活重试，对抗 Docker 竞速启动导致 MySQL 未热机）
 const initDatabase = async () => {
-    try {
-        const createTableSql = `
-            CREATE TABLE IF NOT EXISTS toolbox_tasks (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                task_name VARCHAR(255) NOT NULL,
-                task_type VARCHAR(50) NOT NULL,
-                status VARCHAR(20) DEFAULT 'processing',
-                progress INT DEFAULT 0,
-                file_path VARCHAR(255),
-                result_path VARCHAR(255),
-                error_msg TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        `;
-        await db.query(createTableSql);
-        console.log('✅ 底层异步工单引擎数据表 (toolbox_tasks) 扫描并重构就绪!');
-    } catch (err) {
-        console.error('❌ 底层异步工单引擎建表崩解:', err);
+    const createTableSql = `
+        CREATE TABLE IF NOT EXISTS toolbox_tasks (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            task_name VARCHAR(255) NOT NULL,
+            task_type VARCHAR(50) NOT NULL,
+            status VARCHAR(20) DEFAULT 'processing',
+            progress INT DEFAULT 0,
+            file_path VARCHAR(255),
+            result_path VARCHAR(255),
+            error_msg TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    `;
+    
+    // 死循环探活，直到表成功创建才允许开机，彻底杜绝 500 惨剧
+    while (true) {
+        try {
+            await db.query(createTableSql);
+            console.log('✅ 底层异步工单引擎数据表 (toolbox_tasks) 扫描并重构就绪!');
+            break;
+        } catch (err) {
+            console.error('⏳ MySQL 底座尚未完成热机启动，建表指令被拒绝。触发内核自愈重试保护机制 (3S后重启)...', err.message);
+            await new Promise(resolve => setTimeout(resolve, 3000));
+        }
     }
 };
 
